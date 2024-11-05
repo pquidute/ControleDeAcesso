@@ -180,7 +180,7 @@ public class ControleDeAcesso {
                 System.out.println("id de acesso " + novoIdAcesso + " associado ao usuário " + matrizCadastro[linhas][2]);
                 conexaoMQTT.publicarMensagem("cadastro/disp", "CadastroConcluido");
                 encontrado = true;
-                salvaDadosNoArquivo();
+                salvarDadosNoArquivo();
                 break;
             }
         }
@@ -228,7 +228,7 @@ public class ControleDeAcesso {
             System.out.println("-----------------------Inserido com sucesso------------------------\n");
         }
         matrizCadastro = novaMatriz;
-        salvaDadosNoArquivo();
+        salvarDadosNoArquivo();
     }
 
     private static void atualizarUsuario() {
@@ -246,7 +246,7 @@ public class ControleDeAcesso {
 
         System.out.println("---------Atualizado com sucesso-----------");
         exibirCadastro();
-        salvaDadosNoArquivo();
+        salvarDadosNoArquivo();
     }
 
     private static void deletarUsuario() {
@@ -264,16 +264,16 @@ public class ControleDeAcesso {
         }
 
         matrizCadastro = novaMatriz;
-        salvaDadosNoArquivo();
+        salvarDadosNoArquivo();
         System.out.println("-----------------------Deletado com sucesso------------------------\n");
     }
 
     // Funções para persistência de dados
     private static void carregarDadosDoArquivo() {
+        if (!BANCO_DE_DADOS.exists()) {
+            return;
+        }
         try (BufferedReader reader = new BufferedReader(new FileReader(BANCO_DE_DADOS))) {
-            if (!BANCO_DE_DADOS.exists()) {
-                return;
-            }
             String linha;
             StringBuilder conteudo = new StringBuilder();
             while ((linha = reader.readLine()) != null) {
@@ -291,13 +291,11 @@ public class ControleDeAcesso {
         }
     }
 
-    public static void salvaDadosNoArquivo() {
-        try {
-            BufferedWriter writer = new BufferedWriter(new FileWriter(BANCO_DE_DADOS));
+    public static void salvarDadosNoArquivo() {
+        try(BufferedWriter writer = new BufferedWriter(new FileWriter(BANCO_DE_DADOS))) {
             for (String[] linha : matrizCadastro) {
                 writer.write(String.join(",", linha) + "\n");
             }
-            writer.close();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

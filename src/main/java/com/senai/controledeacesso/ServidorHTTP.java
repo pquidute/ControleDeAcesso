@@ -164,7 +164,7 @@ public class ServidorHTTP {
 
                 novaMatriz[novoID] = novoRegistro;
                 ControleDeAcesso.matrizCadastro = novaMatriz;
-                ControleDeAcesso.salvaDadosNoArquivo();
+                ControleDeAcesso.salvarDadosNoArquivo();
 
                 String responseMessage = "Cadastro recebido com sucesso!";
                 exchange.sendResponseHeaders(200, responseMessage.length());
