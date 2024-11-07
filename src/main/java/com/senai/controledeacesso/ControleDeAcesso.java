@@ -14,9 +14,9 @@ public class ControleDeAcesso {
     private final static File BANCO_DE_DADOS = new File("src\\main\\resources\\bancoDeDados.txt");
     private final static String RAIZ_WEBAPP = "src\\main\\webapp\\build";
 
-    static String[] cabecalho = {"ID", "IdAcesso", "Nome", "Telefone", "Email"};
-    static String[][] matrizCadastro;
-    public static String[][] matrizRegistrosDeAcesso = {{"", ""}};// inicia a matriz com uma linha e duas colunas com "" para que na primeira vez não apareça null na tabela de registros
+    static String[] cabecalho = {"ID", "IdAcesso", "Nome", "Telefone", "Email", "Imagem"};
+    static String[][] matrizCadastro = {{"", ""}};
+    public static String[][] matrizRegistrosDeAcesso = {{"", "", ""}};// inicia a matriz com uma linha e duas colunas com "" para que na primeira vez não apareça null na tabela de registros
 
     static volatile boolean modoCadastrarIdAcesso = false;
     static int idUsuarioRecebidoPorHTTP = 0;
@@ -32,8 +32,8 @@ public class ControleDeAcesso {
     static ExecutorService executorCadastroIdAcesso = Executors.newSingleThreadExecutor();
 
     public static void main(String[] args) {
-        conexaoMQTT = new CLienteMQTT(brokerUrl, topico, ControleDeAcesso::processarMensagemMQTTRecebida);
         carregarDadosDoArquivo();
+        conexaoMQTT = new CLienteMQTT(brokerUrl, topico, ControleDeAcesso::processarMensagemMQTTRecebida);
         servidorHTTP.iniciarServidorHTTP(); // Inicia o servidor HTTP
         menuPrincipal();
 
@@ -124,11 +124,11 @@ public class ControleDeAcesso {
     // Função que busca e atualiza a tabela com o ID recebido
     private static void criarNovoRegistroDeAcesso(String idAcessoRecebido) {
         boolean usuarioEncontrado = false; // Variável para verificar se o usuário foi encontrado
-        String[][] novaMatrizRegistro = new String[matrizRegistrosDeAcesso.length][2];
+        String[][] novaMatrizRegistro = new String[matrizRegistrosDeAcesso.length][matrizRegistrosDeAcesso[0].length];
         int linhaNovoRegistro = 0;
 
         if (!matrizRegistrosDeAcesso[0][0].isEmpty()) {//testa se o valor da primeira posição da matriz está diferente de vazia ou "".
-            novaMatrizRegistro = new String[matrizRegistrosDeAcesso.length + 1][2];
+            novaMatrizRegistro = new String[matrizRegistrosDeAcesso.length + 1][matrizRegistrosDeAcesso[0].length];
             linhaNovoRegistro = matrizRegistrosDeAcesso.length;
             for (int linhas = 0; linhas < matrizRegistrosDeAcesso.length; linhas++) {
                 novaMatrizRegistro[linhas] = Arrays.copyOf(matrizRegistrosDeAcesso[linhas], matrizRegistrosDeAcesso[linhas].length);
@@ -142,6 +142,7 @@ public class ControleDeAcesso {
             if (idAcessoNaMatriz.equals(idAcessoRecebido)) {
                 novaMatrizRegistro[linhaNovoRegistro][0] = matrizCadastro[linhas][2]; // Assume que o nome do usuário está na coluna 3
                 novaMatrizRegistro[linhaNovoRegistro][1] = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+                novaMatrizRegistro[linhaNovoRegistro][2] = matrizCadastro[linhas][5];
                 System.out.println("Usuário encontrado: " +
                         novaMatrizRegistro[linhaNovoRegistro][0] + " - " +
                         novaMatrizRegistro[linhaNovoRegistro][1]);
@@ -219,12 +220,15 @@ public class ControleDeAcesso {
         System.out.println("\nPreencha os dados a seguir:");
         for (int linhas = matrizCadastro.length; linhas < novaMatriz.length; linhas++) {
             System.out.println(matrizCadastro[0][0] + "- " + linhas);
-            novaMatriz[linhas][0] = String.valueOf(linhas);
-            novaMatriz[linhas][1] = "Não Cadastrado";
-            for (int colunas = 2; colunas < matrizCadastro[0].length; colunas++) {
+            novaMatriz[linhas][0] = String.valueOf(linhas);// preenche o campo id com o numero gerado pelo for
+            novaMatriz[linhas][1] = "-"; //preenche o campo idCadastro com "-"
+
+            for (int colunas = 2; colunas < matrizCadastro[0].length - 1; colunas++) {
                 System.out.print(matrizCadastro[0][colunas] + ": ");
                 novaMatriz[linhas][colunas] = scanner.nextLine();
             }
+            novaMatriz[linhas][matrizCadastro[0].length - 1] = "-";//preenche o campo imagem com "-"
+
             System.out.println("-----------------------Inserido com sucesso------------------------\n");
         }
         matrizCadastro = novaMatriz;
@@ -270,29 +274,35 @@ public class ControleDeAcesso {
 
     // Funções para persistência de dados
     private static void carregarDadosDoArquivo() {
-        if (!BANCO_DE_DADOS.exists()) {
+        matrizCadastro[0] = cabecalho;
+        if (!BANCO_DE_DADOS.exists())
             return;
-        }
+
         try (BufferedReader reader = new BufferedReader(new FileReader(BANCO_DE_DADOS))) {
             String linha;
             StringBuilder conteudo = new StringBuilder();
+
             while ((linha = reader.readLine()) != null) {
-                conteudo.append(linha).append("\n");
+                if (!linha.trim().isEmpty()) {
+                    conteudo.append(linha).append("\n");
+                }
             }
 
-            String[] linhas = conteudo.toString().split("\n");
-            matrizCadastro = new String[linhas.length][cabecalho.length];
-
-            for (int i = 0; i < linhas.length; i++) {
-                matrizCadastro[i] = linhas[i].split(",");
+            if (!conteudo.toString().trim().isEmpty()) {
+                String[] linhasDaTabela = conteudo.toString().split("\n");
+                matrizCadastro = new String[linhasDaTabela.length][cabecalho.length];
+                for (int i = 0; i < linhasDaTabela.length; i++) {
+                    matrizCadastro[i] = linhasDaTabela[i].split(",");
+                }
             }
+
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
     public static void salvarDadosNoArquivo() {
-        try(BufferedWriter writer = new BufferedWriter(new FileWriter(BANCO_DE_DADOS))) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(BANCO_DE_DADOS))) {
             for (String[] linha : matrizCadastro) {
                 writer.write(String.join(",", linha) + "\n");
             }

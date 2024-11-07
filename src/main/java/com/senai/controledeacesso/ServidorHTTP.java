@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.stream.Collectors;
 
 public class ServidorHTTP {
@@ -34,6 +35,8 @@ public class ServidorHTTP {
             server.createContext("/cadastro", new CadastroHandler());
             server.createContext("/iniciarRegistroTag", new IniciarRegistroTagHandler());
             server.createContext("/verificarStatusTag", new VerificarStatusTagHandler());
+            // Rota para servir imagens da pasta src/main/resources/imagens/
+            server.createContext("/imagens", new ImageHandler());
 
             server.setExecutor(null); // Utiliza o executor padrão
             server.start();
@@ -89,14 +92,15 @@ public class ServidorHTTP {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-
+            System.out.println("teste");
             String jsonResponse = ControleDeAcesso.matrizRegistrosDeAcesso.length == 0
                     ? "[]"
                     : "[" +
                     Arrays.stream(ControleDeAcesso.matrizRegistrosDeAcesso)
-                            .map(registro -> String.format("{\"nome\":\"%s\",\"horario\":\"%s\"}", registro[0], registro[1]))
+                            .map(registro -> String.format("{\"nome\":\"%s\",\"horario\":\"%s\",\"imagem\":\"%s\"}", registro[0], registro[1],registro[2]))
                             .collect(Collectors.joining(",")) +
                     "]";
+            System.out.println("JSON Response: " + jsonResponse);
             byte[] bytesResposta = jsonResponse.getBytes();
             exchange.sendResponseHeaders(200, bytesResposta.length);
             OutputStream os = exchange.getResponseBody();
@@ -117,13 +121,16 @@ public class ServidorHTTP {
                 if (registro != null) { // Verifica se a linha está preenchida
                     JSONObject json = new JSONObject();
                     json.put("id", registro[0]);
-                    json.put("idAcesso", registro[1] != null ? registro[1] : "Não Cadastrado");
+                    json.put("idAcesso", (registro[1] != null && !registro[1].isEmpty()) ? registro[1] : "-");
                     json.put("nome", registro[2]);
                     json.put("telefone", registro[3]);
                     json.put("email", registro[4]);
+                    json.put("imagem", registro[5]) ;
                     jsonArray.put(json);
                 }
             }
+
+            // Envia a resposta como JSON
             byte[] response = jsonArray.toString().getBytes();
             exchange.sendResponseHeaders(200, response.length);
             exchange.getResponseBody().write(response);
@@ -131,38 +138,40 @@ public class ServidorHTTP {
         }
     }
 
+
     // Handler para cadastrar um novo usuário
     private class CadastroHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             if ("POST".equals(exchange.getRequestMethod())) {
                 exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-                InputStreamReader isr = new InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8);
-                BufferedReader br = new BufferedReader(isr);
-                StringBuilder requestBody = new StringBuilder();
-                String line;
-                while ((line = br.readLine()) != null) {
-                    requestBody.append(line);
+                InputStreamReader inputStreamReader = new InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8);
+                BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+                StringBuilder corpoDaRequisicao = new StringBuilder();
+                String linha;
+                while ((linha = bufferedReader.readLine()) != null) {
+                    corpoDaRequisicao.append(linha);
                 }
-
-                JSONObject json = new JSONObject(requestBody.toString());
-                String nome = json.getString("nome");
-                String telefone = json.getString("telefone");
-                String email = json.getString("email");
-                //Logs
-                System.out.println("nome : " + nome + " | telefone : " + telefone + " | email : " + email);
 
                 // Gera novo ID e cria o registro
                 int novoID = ControleDeAcesso.matrizCadastro.length;
 
-                String[] novoRegistro = {String.valueOf(novoID), "Não Cadastrado", nome, telefone, email};
-                String[][] novaMatriz = new String[novoID + 1][novoRegistro[0].length()];
+                JSONObject json = new JSONObject(corpoDaRequisicao.toString());
+                String nome = json.getString("nome");
+                String telefone = json.getString("telefone");
+                String email = json.getString("email");
+                String imagem = salvarImagem(json.getString("imagem"), nome, novoID);
+                //Logs
+                System.out.println("nome : " + nome + " | telefone : " + telefone + " | email : " + email);
+
+                String[] novoUsuario = {String.valueOf(novoID), "-", nome, telefone, email, imagem};
+                String[][] novaMatriz = new String[novoID + 1][novoUsuario[0].length()];
 
                 for (int linhas = 0; linhas < ControleDeAcesso.matrizCadastro.length; linhas++) {
                     novaMatriz[linhas] = Arrays.copyOf(ControleDeAcesso.matrizCadastro[linhas], ControleDeAcesso.matrizCadastro[linhas].length);
                 }
 
-                novaMatriz[novoID] = novoRegistro;
+                novaMatriz[novoID] = novoUsuario;
                 ControleDeAcesso.matrizCadastro = novaMatriz;
                 ControleDeAcesso.salvarDadosNoArquivo();
 
@@ -176,6 +185,38 @@ public class ServidorHTTP {
         }
     }
 
+    private String salvarImagem(String imagemBase64, String nome, int id) throws IOException {
+        byte[] dados = Base64.getDecoder().decode(imagemBase64);
+        String nomeImagem =  id + nome + ".png";
+        try (FileOutputStream fos = new FileOutputStream("src\\main\\resources\\imagens\\" +nomeImagem)) {
+            fos.write(dados);
+        }
+        return nomeImagem;
+    }
+
+    // Classe para lidar com requisições de imagens
+    private class ImageHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            String imagePath = "src\\main\\resources\\imagens" + exchange.getRequestURI().getPath().replace("/imagens", "");
+            File imageFile = new File(imagePath);
+
+            if (imageFile.exists() && !imageFile.isDirectory()) {
+                // Define o tipo de conteúdo como imagem (ajusta conforme o tipo de imagem que está servindo)
+                exchange.getResponseHeaders().set("Content-Type", Files.probeContentType(Paths.get(imagePath)));
+                exchange.sendResponseHeaders(200, imageFile.length());
+
+                // Envia a imagem ao cliente
+                try (OutputStream os = exchange.getResponseBody();
+                     FileInputStream fs = new FileInputStream(imageFile)) {
+                    fs.transferTo(os);
+                }
+            } else {
+                exchange.sendResponseHeaders(404, -1); // 404 caso a imagem não seja encontrada
+            }
+            exchange.close();
+        }
+    }
     private class IniciarRegistroTagHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -216,7 +257,7 @@ public class ServidorHTTP {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             int usuarioId = Integer.parseInt(exchange.getRequestURI().getPath().split("/")[2]);
-            String status = ControleDeAcesso.matrizCadastro[usuarioId][1].equals("Não Cadastrado") ? "aguardando" : "sucesso";
+            String status = ControleDeAcesso.matrizCadastro[usuarioId][1].equals("-") ? "aguardando" : "sucesso";
 
             String response = "{\"status\":\"" + status + "\"}";
             exchange.getResponseHeaders().add("Content-Type", "application/json");
