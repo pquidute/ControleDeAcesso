@@ -10,9 +10,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 public class ControleDeAcesso {
+    // Caminho para a pasta ControleDeAcesso no diretório do usuário
+    private static final File pastaControleDeAcesso = new File(System.getProperty("user.home"), "ControleDeAcesso");
 
-    private final static File BANCO_DE_DADOS = new File("src\\main\\resources\\bancoDeDados.txt");
-    private final static String RAIZ_WEBAPP = "src\\main\\webapp\\build";
+    // Caminho para o arquivo bancoDeDados.txt e para a pasta imagens
+    private static final File arquivoBancoDeDados = new File(pastaControleDeAcesso, "bancoDeDados.txt");
+    public static final File pastaImagens = new File(pastaControleDeAcesso, "imagens");
 
     static String[] cabecalho = {"ID", "IdAcesso", "Nome", "Telefone", "Email", "Imagem"};
     static String[][] matrizCadastro = {{"", ""}};
@@ -26,15 +29,16 @@ public class ControleDeAcesso {
     static String topico = "IoTKIT1/UID";
 
     static CLienteMQTT conexaoMQTT;
-    static ServidorHTTP servidorHTTP = new ServidorHTTP(RAIZ_WEBAPP);
+    static ServidorHTTPS servidorHTTPS;
     static Scanner scanner = new Scanner(System.in);
     static ExecutorService executorIdentificarAcessos = Executors.newFixedThreadPool(4);
     static ExecutorService executorCadastroIdAcesso = Executors.newSingleThreadExecutor();
 
     public static void main(String[] args) {
+        verificarEstruturaDeDiretorios();
         carregarDadosDoArquivo();
         conexaoMQTT = new CLienteMQTT(brokerUrl, topico, ControleDeAcesso::processarMensagemMQTTRecebida);
-        servidorHTTP.iniciarServidorHTTP(); // Inicia o servidor HTTP
+        servidorHTTPS = new ServidorHTTPS(); // Inicia o servidor HTTPS
         menuPrincipal();
 
         // Finaliza o todos os processos abertos ao sair do programa
@@ -42,7 +46,7 @@ public class ControleDeAcesso {
         executorIdentificarAcessos.shutdown();
         executorCadastroIdAcesso.shutdown();
         conexaoMQTT.desconectar();
-        servidorHTTP.pararServidorHTTP();
+        servidorHTTPS.pararServidorHTTPS();
     }
 
     private static void menuPrincipal() {
@@ -274,11 +278,8 @@ public class ControleDeAcesso {
 
     // Funções para persistência de dados
     private static void carregarDadosDoArquivo() {
-        matrizCadastro[0] = cabecalho;
-        if (!BANCO_DE_DADOS.exists())
-            return;
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(BANCO_DE_DADOS))) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(arquivoBancoDeDados))) {
             String linha;
             StringBuilder conteudo = new StringBuilder();
 
@@ -299,15 +300,49 @@ public class ControleDeAcesso {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+        matrizCadastro[0] = cabecalho;
     }
 
     public static void salvarDadosNoArquivo() {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(BANCO_DE_DADOS))) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoBancoDeDados))) {
             for (String[] linha : matrizCadastro) {
                 writer.write(String.join(",", linha) + "\n");
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    private static void verificarEstruturaDeDiretorios() {
+        // Verifica se a pasta ControleDeAcesso existe, caso contrário, cria
+        if (!pastaControleDeAcesso.exists()) {
+            if (pastaControleDeAcesso.mkdir()) {
+                System.out.println("Pasta ControleDeAcesso criada com sucesso.");
+            } else {
+                System.out.println("Falha ao criar a pasta ControleDeAcesso.");
+            }
+        }
+
+        // Verifica se o arquivo bancoDeDados.txt existe, caso contrário, cria
+        if (!arquivoBancoDeDados.exists()) {
+            try {
+                if (arquivoBancoDeDados.createNewFile()) {
+                    System.out.println("Arquivo bancoDeDados.txt criado com sucesso.");
+                } else {
+                    System.out.println("Falha ao criar o arquivo bancoDeDados.txt.");
+                }
+            } catch (IOException e) {
+                System.out.println("Erro ao criar arquivo bancoDeDados.txt: " + e.getMessage());
+            }
+        }
+
+        // Verifica se a pasta imagens existe, caso contrário, cria
+        if (!pastaImagens.exists()) {
+            if (pastaImagens.mkdir()) {
+                System.out.println("Pasta imagens criada com sucesso.");
+            } else {
+                System.out.println("Falha ao criar a pasta imagens.");
+            }
         }
     }
 }

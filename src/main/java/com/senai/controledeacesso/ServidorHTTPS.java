@@ -1,53 +1,100 @@
 package com.senai.controledeacesso;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLParameters;
 import java.io.*;
 import java.net.InetSocketAddress;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.KeyStore;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.stream.Collectors;
 
-public class ServidorHTTP {
+public class ServidorHTTPS {
 
-    private final String caminhoRaizWebapp;  // raizWebapp é uma variável de instância
-    private HttpServer server;
+    private HttpsServer server;
 
-    // Construtor que inicializa o servidor com a raiz do WebApp
-    public ServidorHTTP(String raizWebapp) {
-        this.caminhoRaizWebapp = raizWebapp;
+    public ServidorHTTPS(){
+        iniciarServidorHTTPS();
     }
 
-    // Método que inicializa o servidor HTTP
-    public void iniciarServidorHTTP() {
+    public void iniciarServidorHTTPS() {
         try {
-            server = HttpServer.create(new InetSocketAddress(8000), 0);
+            System.out.println("Iniciando o servidor HTTPS...");
+
+            // Configuração do SSLContext
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+
+            // Configuração do Keystore
+            char[] password = "fael4190".toCharArray();  // Defina a senha do seu keystore
+            KeyStore ks = KeyStore.getInstance("JKS");
+            InputStream inputStream = getClass().getClassLoader().getResourceAsStream("security/keystore.jks");
+
+            if (inputStream == null) {
+                System.out.println("Erro: Keystore não encontrado no caminho especificado em 'src/main/resources/security/keystore.jks'.");
+                throw new FileNotFoundException("Keystore não encontrado.");
+            }
+
+            ks.load(inputStream, password);
+            inputStream.close();
+
+            KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance("SunX509");
+            keyManagerFactory.init(ks, password);
+
+            sslContext.init(keyManagerFactory.getKeyManagers(), null, null);
+
+            // Configuração do HttpsServer com endereço "0.0.0.0" para permitir acesso externo
+            server = HttpsServer.create(new InetSocketAddress("0.0.0.0", 8000), 0);
+            server.setHttpsConfigurator(new HttpsConfigurator(sslContext) {
+                public void configure(HttpsParameters params) {
+                    try {
+                        SSLContext context = getSSLContext();
+                        SSLEngine engine = context.createSSLEngine();
+                        params.setNeedClientAuth(false);
+                        params.setCipherSuites(engine.getEnabledCipherSuites());
+                        params.setProtocols(engine.getEnabledProtocols());
+
+                        SSLParameters sslParameters = context.getDefaultSSLParameters();
+                        params.setSSLParameters(sslParameters);
+                    } catch (Exception ex) {
+                        System.out.println("Erro ao configurar o SSLContext para HTTPS.");
+                        ex.printStackTrace();
+                    }
+                }
+            });
+
+            // Configurar Handlers para rotas
             server.createContext("/", new HomeHandler());
             server.createContext("/atualizacao", new AtualizacaoHandler());
             server.createContext("/cadastros", new CadastroListHandler());
             server.createContext("/cadastro", new CadastroHandler());
             server.createContext("/iniciarRegistroTag", new IniciarRegistroTagHandler());
             server.createContext("/verificarStatusTag", new VerificarStatusTagHandler());
-            // Rota para servir imagens da pasta src/main/resources/imagens/
             server.createContext("/imagens", new ImageHandler());
 
-            server.setExecutor(null); // Utiliza o executor padrão
+            server.setExecutor(null); // Sem thread pool personalizado
             server.start();
-            System.out.println("Servidor HTTP iniciado na porta 8000");
-        } catch (IOException e) {
+            System.out.println("Servidor HTTPS iniciado na porta 8000 e acessível em todas as interfaces de rede.");
+
+        } catch (Exception e) {
+            System.out.println("Erro ao iniciar o servidor HTTPS.");
+            e.printStackTrace();
             throw new RuntimeException(e);
         }
     }
 
     // Método para parar o servidor
-    public void pararServidorHTTP() {
+    public void pararServidorHTTPS() {
         if (server != null) {
             server.stop(0);
             System.out.println("Servidor HTTP parado.");
@@ -58,41 +105,81 @@ public class ServidorHTTP {
     private class HomeHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
+            System.out.println("Requisição recebida na rota: " + exchange.getRequestURI().getPath());
+
             String caminhoRequisitado = exchange.getRequestURI().getPath();
-            File arquivo;
 
-            // Serve o index.html para qualquer rota não específica
+            // Caminho relativo para a pasta webapp
+            String caminhoRelativoWebapp = "webapp";
+            String caminhoArquivoRequisitado;
+
             if ("/".equals(caminhoRequisitado) || caminhoRequisitado.startsWith("/index.html")) {
-                arquivo = new File(caminhoRaizWebapp + "/index.html");
+                caminhoArquivoRequisitado = caminhoRelativoWebapp + "/index.html";
             } else {
-                arquivo = new File(caminhoRaizWebapp + caminhoRequisitado);
+                caminhoArquivoRequisitado = caminhoRelativoWebapp + caminhoRequisitado;
             }
 
-            // Verifica se o arquivo existe e é legível
-            byte[] bytesResposta;
-            if (arquivo.exists() && arquivo.isFile()) {
-                String mimeType = Files.probeContentType(Paths.get(arquivo.getAbsolutePath()));
-                exchange.getResponseHeaders().set("Content-Type", mimeType);
-                bytesResposta = Files.readAllBytes(arquivo.toPath());
-            } else {
-                // Se o arquivo não for encontrado, redireciona para o index.html
-                File indexFile = new File(caminhoRaizWebapp + "/index.html");
-                bytesResposta = Files.readAllBytes(indexFile.toPath());
-                exchange.getResponseHeaders().set("Content-Type", "text/html");
+            // Tentativa de carregar o arquivo como um recurso de dentro do JAR
+            InputStream inputStream = getClass().getClassLoader().getResourceAsStream(caminhoArquivoRequisitado);
+
+            if (inputStream == null) {
+                System.out.println("Arquivo não encontrado no classpath. Tentando carregar do sistema de arquivos.");
+
+                // Caminho alternativo para o sistema de arquivos para ambiente de desenvolvimento
+                File arquivoLocal = new File("src/main/" + caminhoArquivoRequisitado);
+                if (arquivoLocal.exists() && arquivoLocal.isFile()) {
+                    inputStream = new FileInputStream(arquivoLocal);
+                    System.out.println("Arquivo encontrado no sistema de arquivos: " + arquivoLocal.getPath());
+                }
             }
-            exchange.sendResponseHeaders(200, bytesResposta.length);
-            OutputStream os = exchange.getResponseBody();
-            os.write(bytesResposta);
-            os.close();
+
+            if (inputStream == null) {
+                System.out.println("Arquivo não encontrado, retornando página 404.");
+                // Página não encontrada, serve uma página HTML de erro
+                String html404 = """
+                <html>
+                    <head>
+                        <title>Página não encontrada</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                            h1 { color: #ff0000; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>404 - Página não encontrada</h1>
+                        <p>A página que você está tentando acessar não foi encontrada no servidor.</p>
+                    </body>
+                </html>
+                """;
+                byte[] bytesResposta = html404.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+                exchange.sendResponseHeaders(404, bytesResposta.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(bytesResposta);
+                }
+            } else {
+                // Lê o conteúdo do arquivo encontrado e envia a resposta
+                byte[] bytesResposta = inputStream.readAllBytes();
+                inputStream.close();
+
+                // Determina o tipo MIME com base na extensão do arquivo
+                String mimeType = Files.probeContentType(Paths.get(caminhoArquivoRequisitado));
+                exchange.getResponseHeaders().set("Content-Type", mimeType != null ? mimeType : "application/octet-stream");
+                exchange.sendResponseHeaders(200, bytesResposta.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(bytesResposta);
+                }
+            }
+            exchange.close();
         }
     }
+
 
     // Handler para a rota "/atualizacao"
     private class AtualizacaoHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-            System.out.println("teste");
             String jsonResponse = ControleDeAcesso.matrizRegistrosDeAcesso.length == 0
                     ? "[]"
                     : "[" +
@@ -100,7 +187,6 @@ public class ServidorHTTP {
                             .map(registro -> String.format("{\"nome\":\"%s\",\"horario\":\"%s\",\"imagem\":\"%s\"}", registro[0], registro[1],registro[2]))
                             .collect(Collectors.joining(",")) +
                     "]";
-            System.out.println("JSON Response: " + jsonResponse);
             byte[] bytesResposta = jsonResponse.getBytes();
             exchange.sendResponseHeaders(200, bytesResposta.length);
             OutputStream os = exchange.getResponseBody();
@@ -125,7 +211,8 @@ public class ServidorHTTP {
                     json.put("nome", registro[2]);
                     json.put("telefone", registro[3]);
                     json.put("email", registro[4]);
-                    json.put("imagem", registro[5]) ;
+                    json.put("imagem", registro[5] != null ? registro[5] : "-");
+
                     jsonArray.put(json);
                 }
             }
@@ -186,10 +273,14 @@ public class ServidorHTTP {
     }
 
     private String salvarImagem(String imagemBase64, String nome, int id) throws IOException {
+
         byte[] dados = Base64.getDecoder().decode(imagemBase64);
+        // Nome da imagem baseado no ID e nome
         String nomeImagem =  id + nome + ".png";
-        try (FileOutputStream fos = new FileOutputStream("src\\main\\resources\\imagens\\" +nomeImagem)) {
-            fos.write(dados);
+        // Caminho completo para salvar a imagem
+        File arquivoNovaImagem = new File(ControleDeAcesso.pastaImagens, nomeImagem);
+        try (FileOutputStream fileOutputStream = new FileOutputStream(arquivoNovaImagem)) {
+            fileOutputStream.write(dados);
         }
         return nomeImagem;
     }
@@ -198,7 +289,9 @@ public class ServidorHTTP {
     private class ImageHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String imagePath = "src\\main\\resources\\imagens" + exchange.getRequestURI().getPath().replace("/imagens", "");
+
+            // Recupera o caminho da imagem solicitada pela URI
+            String imagePath = ControleDeAcesso.pastaImagens.getAbsolutePath() + exchange.getRequestURI().getPath().replace("/imagens", "");
             File imageFile = new File(imagePath);
 
             if (imageFile.exists() && !imageFile.isDirectory()) {
