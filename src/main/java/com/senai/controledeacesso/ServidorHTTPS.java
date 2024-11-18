@@ -36,7 +36,7 @@ public class ServidorHTTPS {
             SSLContext sslContext = SSLContext.getInstance("TLS");
 
             // Configuração do Keystore
-            char[] password = "fael4190".toCharArray();  // Defina a senha do seu keystore
+            char[] password = "".toCharArray();  // Defina a senha do seu keystore
             KeyStore ks = KeyStore.getInstance("JKS");
             InputStream inputStream = getClass().getClassLoader().getResourceAsStream("security/keystore.jks");
 
