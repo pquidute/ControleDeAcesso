@@ -240,6 +240,7 @@ public class ControleDeAcesso {
     }
 
     private static void atualizarUsuario() {
+
         exibirCadastro();
         System.out.println("Escolha um id para atualizar o cadastro:");
         int idUsuario = scanner.nextInt();
@@ -257,23 +258,29 @@ public class ControleDeAcesso {
         salvarDadosNoArquivo();
     }
 
-    private static void deletarUsuario() {
+    public static void deletarUsuario() {
         String[][] novaMatriz = new String[matrizCadastro.length - 1][matrizCadastro[0].length];
+        int idUsuario = idUsuarioRecebidoPorHTTP;
+        if (idUsuarioRecebidoPorHTTP == 0) {
+            exibirCadastro();
+            System.out.println("Escolha um id para deletar o cadastro:");
+            idUsuario = scanner.nextInt();
+            scanner.nextLine();
+        }
 
-        exibirCadastro();
-        System.out.println("Escolha um id para deletar o cadastro:");
-        int idUsuario = scanner.nextInt();
-        scanner.nextLine();
-
-        for (int i = 0, j = 0; i < matrizCadastro.length; i++) {
+        for (int i = 1, j = 1; i < matrizCadastro.length; i++) {
             if (i == idUsuario)
                 continue;
-            novaMatriz[j++] = matrizCadastro[i];
+            novaMatriz[j] = matrizCadastro[i];
+            novaMatriz[j][0]= String.valueOf(j);
+            j++;
         }
 
         matrizCadastro = novaMatriz;
+        matrizCadastro[0]=cabecalho;
         salvarDadosNoArquivo();
         System.out.println("-----------------------Deletado com sucesso------------------------\n");
+        idUsuarioRecebidoPorHTTP = 0;
     }
 
     // Funções para persistência de dados
