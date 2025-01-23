@@ -7,12 +7,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 public class CLienteMQTT {
-
+    //Atributos da classe ClienteMQTT
     private MqttClient cliente;
     private final String brokerUrl;
     private String topicoAtual;
     private MensagemListener listenerAtual;
 
+    //Construtor
     public CLienteMQTT(String brokerUrl, String topico, MensagemListener listener) {
         this.brokerUrl = brokerUrl;
         this.topicoAtual = topico;
