@@ -14,12 +14,15 @@ public class ControleDeAcesso {
     private static final File pastaControleDeAcesso = new File(System.getProperty("user.home"), "ControleDeAcesso");
 
     // Caminho para o arquivo bancoDeDados.txt e para a pasta imagens
-    private static final File arquivoBancoDeDados = new File(pastaControleDeAcesso, "bancoDeDados.txt");
+    private static final File databaseCadastros = new File(pastaControleDeAcesso, "bancoDeDados.txt");
+    private static final File databaseRegistrosDeAcesso = new File(pastaControleDeAcesso, "bancoDeDados.txt");
     public static final File pastaImagens = new File(pastaControleDeAcesso, "imagens");
 
     static ArrayList<Cadastro> arrayCadastros;
     static ArrayList<RegistroDeAcesso> arrayRegistrosDeAcesso;
     static String cabecalho = "ID\t\tIdAcesso\t\tNome\t\tTelefone\t\tEmail\t\tImagem";
+    static String cabecalhoRegistrosDeAcesso = "Horário\t\tID de Acesso";
+
 
     static volatile boolean modoCadastrarIdAcesso = false;
     static int idUsuarioRecebidoPorHTTP = 0;
@@ -59,8 +62,10 @@ public class ControleDeAcesso {
                     |       2- Inserir novo cadastro                        |
                     |       3- Atualizar cadastro por id                    |
                     |       4- Deletar um cadastro por id                   |
-                    |       5- Associar TAG ou cartão de acesso ao usuário  |
-                    |       6- Sair                                         |
+                    |       5- Listar registros de acesso                   |
+                    |       6- Limpar registros de acesso                   |
+                    |       7- Associar TAG ou cartão de acesso ao usuário  |
+                    |       8- Sair                                         |
                     _________________________________________________________
                     """;
             System.out.println(menu);
@@ -81,9 +86,15 @@ public class ControleDeAcesso {
                     deletarUsuario();
                     break;
                 case 5:
-                    aguardarCadastroDeIdAcesso();
+                    exibirRegistrosDeAcesso();
                     break;
                 case 6:
+                    deletarRegistrosDeAcesso();
+                    break;
+                case 7:
+                    aguardarCadastroDeIdAcesso();
+                    break;
+                case 8:
                     System.out.println("Fim do programa!");
                     break;
                 default:
@@ -162,7 +173,7 @@ public class ControleDeAcesso {
                 arrayCadastros.get(i).idAcesso = novoIdAcesso;
                 System.out.println("ID de acesso " + novoIdAcesso + " associado ao usuário '" + arrayCadastros.get(i).nome + "'.");
                 encontrado = true;
-                salvarDadosNoArquivo();
+                salvarDadosNoArquivo(1);
                 break;
             }
         }
@@ -172,7 +183,7 @@ public class ControleDeAcesso {
         }
     }
 
-    // Funções de CRUD
+    // Funções de CRUD para usuários
     private static void exibirCadastro() {
         if (arrayCadastros.isEmpty()){
             System.out.println("Não há cadastros no sistema!");
@@ -205,7 +216,7 @@ public class ControleDeAcesso {
                 System.out.println("-----------------------Cadastrado com sucesso------------------------\n");
             }
         }
-        salvarDadosNoArquivo();
+        salvarDadosNoArquivo(1);
     }
 
     private static void atualizarUsuario() {
@@ -232,7 +243,7 @@ public class ControleDeAcesso {
             }
         }
         exibirCadastro();
-        salvarDadosNoArquivo();
+        salvarDadosNoArquivo(1);
     }
 
     public static void deletarUsuario() {
@@ -253,13 +264,40 @@ public class ControleDeAcesso {
                 return;
             }
         }
-        salvarDadosNoArquivo();
+        salvarDadosNoArquivo(1);
         idUsuarioRecebidoPorHTTP = 0;
+    }
+
+    // Funções de CRUD para registros de acesso
+    private static void exibirRegistrosDeAcesso() {
+        if (arrayRegistrosDeAcesso.isEmpty()){
+            System.out.println("Não há registros de acesso no sistema!");
+        }else{
+            System.out.println(cabecalhoRegistrosDeAcesso);
+            for (int i = 0; i < arrayRegistrosDeAcesso.size(); i++) {
+                System.out.println(arrayCadastros.get(i).toString());
+            }
+        }
+    }
+
+    public static void deletarRegistrosDeAcesso() {
+        System.out.println("Você irá deletar todos os registros de acesso do sistema. Tem certeza que deseja fazer isso?\n1.Sim\n2.Não");
+        int menu = scanner.nextInt();
+        switch (menu){
+            case 1:
+                arrayRegistrosDeAcesso.clear();
+                System.out.println("-----------------Registros de acesso deletados com sucesso!-----------------");
+                salvarDadosNoArquivo(2);
+                break;
+            case 2:
+                System.out.println("Operação de limpeza de dados cancelada.");
+                break;
+        }
     }
 
     // Funções para persistência de dados
     private static void carregarDadosDoArquivo() {
-        try (BufferedReader reader = new BufferedReader(new FileReader(arquivoBancoDeDados))) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(databaseCadastros))) {
         String linha;
         while ((linha = reader.readLine()) != null) {
             try {
@@ -283,16 +321,68 @@ public class ControleDeAcesso {
     } catch (IOException e) {
         throw new RuntimeException(e);
     }
-    }
+        try (BufferedReader reader = new BufferedReader(new FileReader(databaseRegistrosDeAcesso))) {
+            String linha;
+            while ((linha = reader.readLine()) != null) {
+                try {
+                    String[] parts = linha.trim().split(",", 2);
 
+                    String horario = parts[0];
+                    int idAcesso = Integer.parseInt(parts[1]);
 
-    public static void salvarDadosNoArquivo() {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoBancoDeDados))) {
-            for (Cadastro cadastro : arrayCadastros) {
-                writer.write(cadastro.toString() + "\n");
+                    RegistroDeAcesso registro = new RegistroDeAcesso(horario, idAcesso);
+
+                    arrayRegistrosDeAcesso.add(registro);
+                } catch (Exception e) {
+                    System.err.println("Error parsing line: " + linha + " - " + e.getMessage());
+                }
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public static void salvarDadosNoArquivo(int tipoDeDado) //parametro que indica à função o tipo de dado que será salvo (1-Cadastros; 2-Registros; 3-Ambos)
+    {
+        switch (tipoDeDado){
+            case 1:         //Case 1 salva dados no banco de dados de cadastros
+                try (BufferedWriter writer = new BufferedWriter(new FileWriter(databaseCadastros))) {
+                    writer.write(cabecalho);
+                    for (Cadastro cadastro : arrayCadastros) {
+                        writer.write(cadastro.toString() + "\n");
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                break;
+            case 2:         //Case 2 salva dados no banco de dados de registros de acesso
+                try (BufferedWriter writer = new BufferedWriter(new FileWriter(databaseRegistrosDeAcesso))) {
+                    writer.write(cabecalhoRegistrosDeAcesso);
+                    for (RegistroDeAcesso registro : arrayRegistrosDeAcesso) {
+                        writer.write(registro.toString() + "\n");
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                break;
+            case 3:         //Case 3 salva dados em ambos os bancos de dados
+                try (BufferedWriter writer = new BufferedWriter(new FileWriter(databaseCadastros))) {
+                    writer.write(cabecalho);
+                    for (Cadastro cadastro : arrayCadastros) {
+                        writer.write(cadastro.toString() + "\n");
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                try (BufferedWriter writer = new BufferedWriter(new FileWriter(databaseRegistrosDeAcesso))) {
+                    writer.write(cabecalhoRegistrosDeAcesso);
+                    for (RegistroDeAcesso registro : arrayRegistrosDeAcesso) {
+                        writer.write(registro.toString() + "\n");
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                break;
         }
     }
 
@@ -306,16 +396,27 @@ public class ControleDeAcesso {
             }
         }
 
-        // Verifica se o arquivo bancoDeDados.txt existe, caso contrário, cria
-        if (!arquivoBancoDeDados.exists()) {
+        // Verifica se o arquivo databaseCadastros.txt existe, caso contrário, cria
+        if (!databaseCadastros.exists()) {
             try {
-                if (arquivoBancoDeDados.createNewFile()) {
-                    System.out.println("Arquivo bancoDeDados.txt criado com sucesso.");
+                if (databaseCadastros.createNewFile()) {
+                    System.out.println("Arquivo 'databaseCadastros.txt' criado com sucesso.");
                 } else {
-                    System.out.println("Falha ao criar o arquivo bancoDeDados.txt.");
+                    System.out.println("Falha ao criar o arquivo 'databaseCadastros.txt'");
                 }
             } catch (IOException e) {
-                System.out.println("Erro ao criar arquivo bancoDeDados.txt: " + e.getMessage());
+                System.out.println("Erro ao criar arquivo 'databaseCadastros.txt': " + e.getMessage());
+            }
+        }
+        if (!databaseRegistrosDeAcesso.exists()){
+            try{
+                if (databaseRegistrosDeAcesso.createNewFile()){
+                    System.out.println("Arquivo 'databaseRegistrosDeAcesso.txt' criado com sucesso.");
+                } else {
+                    System.out.println("Falha ao criar o arquivo 'databaseRegistrosDeAcesso.txt'");
+                }
+            }catch (IOException e){
+                System.out.println("Erro ao criar arquivo 'databaseRegistrosDeAcesso.txt': " + e.getMessage());
             }
         }
 

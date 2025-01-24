@@ -17,9 +17,9 @@ public class Cadastro {
     public String toString() {
         if (this.idAcesso == 0) {
             //Se o usuário não possuir id de acesso o campo 'idAcesso' printa "-"
-            return "," + "," + nome + "," + telefone + "," + email + "," + imagem;
+            return "\t\t" + "\t\t" + nome + "\t\t" + telefone + "\t\t" + email + "\t\t" + imagem;
         } else {
-            return "," + idAcesso + "," + nome + "," + telefone + "," + email + "," + imagem;
+            return "\t\t" + idAcesso + "\t\t" + nome + "\t\t" + telefone + "\t\t" + email + "\t\t" + imagem;
         }
     }
 }
